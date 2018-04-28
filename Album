@@ -1,0 +1,36 @@
+library(jsonlite)
+library(stringr)
+library(readr)
+library(gsubfn)
+library(tidytext)
+library(ggplot2)
+library(lubridate)
+library(tidyr)
+library(dplyr)
+require(RCurl)
+library(dummies)
+library(plyr)
+album <- read.csv(text=getURL("https://raw.githubusercontent.com/olgasilyutina/music_recommender/master/fma_metadata/raw_albums.csv"),header=TRUE, sep="," )
+artist <- read.csv(text=getURL("https://raw.githubusercontent.com/olgasilyutina/music_recommender/master/fma_metadata/raw_artists.csv"),header=TRUE, sep="," )
+genres<- read.csv(text=getURL("https://raw.githubusercontent.com/olgasilyutina/music_recommender/master/fma_metadata/genres.csv"),header=TRUE, sep="," )
+rename(artist, c("artist_handle" = "artist_name"))
+#artist$artist_name  = as.character(artist$artist_name)
+Artist<- artist %>%
+  select(artist_comments, artist_favorites, artist_latitude, artist_location, artist_longitude, artist_name)
+Album<- album %>%
+  select(album_engineer, album_handle, album_image_file, album_listens, album_producer, artist_name)
+Album1<-Album%>%group_by(artist_name)
+Album1<- inner_join(Album1, Artist, by = "artist_name")
+Album2<- Album1%>%dplyr::group_by(artist_name)%>%dplyr::summarise(engineer=toString(album_engineer),producer=toString(album_producer))#объединяет к одному исполнителю режисеров 
+
+Album2$producer <- sapply(Album2$producer, function(x) paste(unique(unlist(str_split(x,", "))), collapse = ", "))#убирает повторение 
+Album2$engineer <- sapply(Album2$engineer, function(x) paste(unique(unlist(str_split(x,", "))), collapse = ", "))
+
+CleanedRows = gsub(",+", ",", Album2$engineer)           # Compress multiple commas
+CleanedRows = sub(",\\s*$", "",Album2$producer )
+Album2$engineer <- gsub(",$", "", Album2$engineer)#убираем последнюю запятую 
+Album2$producer <- gsub(",$", "", Album2$producer)
+
+Album3<- Album1 %>%
+  select(album_image_file, album_listens, artist_name,artist_comments, artist_favorites, artist_latitude, artist_location, artist_longitude)
+Album3<- inner_join(Album3, Album2, by = "artist_name")
