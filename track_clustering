@@ -1,0 +1,84 @@
+---
+title: "clustering"
+author: "PolozovaEI"
+date: "01 05 2018"
+output: github_document
+---
+
+```{r}
+library(ggplot2)
+library(dplyr)
+require(RCurl)
+
+
+album <- read.csv(text=getURL("https://raw.githubusercontent.com/olgasilyutina/music_recommender/master/fma_metadata/raw_albums.csv"),header=TRUE, sep="," )
+artist <- read.csv(text=getURL("https://raw.githubusercontent.com/olgasilyutina/music_recommender/master/fma_metadata/raw_artists.csv"),header=TRUE, sep="," )
+genres<- read.csv(text=getURL("https://raw.githubusercontent.com/olgasilyutina/music_recommender/master/fma_metadata/genres.csv"),header=TRUE, sep="," )
+library(readr)
+echonest <- read_csv("~/3 kurs/projects/echonest.csv")
+colnames(echonest) <- echonest[2,]
+colnames(echonest)[1] <- echonest[3,1]
+echonest <- echonest[-c(1:3),]
+
+tracks <- read_delim("~/3 kurs/projects/tracks1.csv", 
+    ";", escape_double = FALSE, trim_ws = TRUE)
+colnames(tracks) <- tracks[2,]
+colnames(tracks)[1] <- tracks[3,1]
+tracks <- tracks[-c(1:3),]
+tracks <- tracks[, -c(2:4)]
+tracks <- tracks[, -c(12)]
+#tracks <- rename(tracks, c("_artist_id" = "artist_id"))
+tracks <- rename(tracks, artist_id = `_artist_id`)
+```
+```{r}
+artist_clean <- artist %>% select(artist_id, artist_comments,artist_favorites,artist_latitude, artist_longitude, artist_name, artist_handle, artist_image_file)
+artist_clean[ , 4:5][is.na(artist_clean[ , 4:5] ) ] = 0
+
+album_clean <- album %>% select(album_id, album_comments, album_date_released, album_favorites, album_handle, album_image_file, album_listens)
+tracks_clean <- tracks %>% dplyr::select(track_id, album_id, album_title, artist_id ,artist_name, latitude, longitude, bit_rate, track_comments, track_favorites, track_listens, track_title, duration, genre_top, interest)
+tracks_clean$artist_id = as.numeric(tracks_clean$artist_id)
+echonest_clean <- echonest %>% select(c(1:9)) 
+genres_clean <- select(genres, genre_id, title)
+```
+```{r}
+tracks_all <- left_join(tracks_clean, genres_clean, by = c("genre_top" = "title"))
+
+tracks_all <- left_join(tracks_all, echonest_clean, by = "track_id")
+tracks_all[ , 6:24][is.na(tracks_all[ , 6:24] ) ] = 0
+```
+
+Определение оптимального числа кластеров
+```{r}
+
+forclusters <- tracks_all %>% select(-c(1:5), -track_title, -genre_top)
+forclusters <- as.data.frame(sapply(forclusters, as.numeric))
+forclusters[ , 1:17][is.na(forclusters[ , 1:17] ) ] = 0
+str(forclusters)
+set.seed(15)
+wss <- (nrow(forclusters)-1)*sum(apply(forclusters,2,var))
+set.seed(15)
+for (i in 2:15) wss[i] <- sum(kmeans(forclusters,
+   centers=i)$withinss)
+plot(1:15, wss, type="b", xlab="Number of Clusters",
+  ylab="Within groups sum of squares")
+
+```
+Оптимальное число кластеров - 4
+
+K-means кластеризация
+```{r}
+
+
+clusters <- kmeans(forclusters[ , 1:17], 4)
+# get cluster means
+aggregate(forclusters[,1:16],by=list(clusters$cluster),FUN=mean)
+
+# cluster assignment - финальный датасет
+tracks_all <- data.frame(tracks_all, clusters$cluster) 
+ 
+#примеры разбиения на кластеры
+library(ggplot2)
+
+ggplot(data=tracks_all, aes(x=track_listens, y=bit_rate, color= clusters.cluster )) + geom_point()
+ 
+```
